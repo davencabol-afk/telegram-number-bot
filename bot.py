@@ -42,8 +42,15 @@ async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("Tidak ada nomor valid ditemukan 😕")
             return
 
-        formatted = "\n".join([f"{i+1}. {num}" for i, num in enumerate(unique_numbers)])
-        await update.message.reply_text(f"Berikut daftar nomor uniknya ({len(unique_numbers)} total):\n\n{formatted}")
+        # Bagi jadi beberapa pesan (maks ~100 baris per pesan)
+        chunk_size = 100
+        total = len(unique_numbers)
+        await update.message.reply_text(f"Berhasil! Ditemukan {total} nomor unik. Berikut daftarnya 👇")
+
+        for i in range(0, total, chunk_size):
+            chunk = unique_numbers[i:i + chunk_size]
+            formatted_chunk = "\n".join([f"{i+j+1}. {num}" for j, num in enumerate(chunk)])
+            await update.message.reply_text(formatted_chunk)
 
     except Exception as e:
         await update.message.reply_text(f"Terjadi kesalahan saat memproses file: {e}")
