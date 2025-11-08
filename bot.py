@@ -49,8 +49,8 @@ async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         for i in range(0, total, chunk_size):
             chunk = unique_numbers[i:i + chunk_size]
-            formatted_chunk = "\n".join([f"{i+j+1}. {num}" for j, num in enumerate(chunk)])
-            await update.message.reply_text(formatted_chunk)
+            formatted_chunk = "\n".join([f"`{num}`" for num in chunk])
+            await update.message.reply_text(formatted_chunk, parse_mode="MarkdownV2")
 
     except Exception as e:
         await update.message.reply_text(f"Terjadi kesalahan saat memproses file: {e}")
