@@ -1,2 +1,1 @@
-python-telegram-bot==20.3
-pandas
+telethon==1.36.0
