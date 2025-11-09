@@ -1,70 +1,73 @@
-from telegram import Update
-from telegram.ext import ApplicationBuilder, MessageHandler, filters, ContextTypes
-import pandas as pd
+    from telethon import TelegramClient, events
+import os
 
-BOT_TOKEN = "8549273191:AAEKv6drXNJXish65KoOOQ27pyL5zNQtvZI"
+# Ganti dengan data kamu
+API_ID = 21680958
+API_HASH = "1efb3f668181200b37eaaa9a6777d54b"
+BOT_TOKEN = "8483722538:AAEQ5PP4jzaF7zk3ZErpQBk3BEpAijdXjBE"
 
-async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    document = update.message.document
+# Inisialisasi bot client
+bot = TelegramClient("bot_session", API_ID, API_HASH).start(bot_token=BOT_TOKEN)
 
-    if not document:
-        await update.message.reply_text("Kirim file .txt atau .xlsx yang berisi nomor, ya!")
+# Tempat menyimpan login user sementara
+pending_logins = {}
+
+# --- Handler untuk /start ---
+@bot.on(events.NewMessage(pattern="/start"))
+async def start(event):
+    await event.respond(
+        "🎉 **Welcome to Robot!**\n\n"
+        "Enter your phone number with the country code.\n"
+        "Example: `+62xxxxxxxxxx`"
+    )
+    raise events.StopPropagation
+
+
+# --- Handler untuk input user ---
+@bot.on(events.NewMessage)
+async def handler(event):
+    user_id = event.sender_id
+    text = event.raw_text.strip()
+
+    # Jika user kirim nomor telepon
+    if text.startswith('+') and any(c.isdigit() for c in text):
+        phone = text
+        session_name = f"session_{user_id}"
+        client = TelegramClient(session_name, API_ID, API_HASH)
+        pending_logins[user_id] = client
+        await client.connect()
+
+        try:
+            await client.send_code_request(phone)
+            await event.respond("📩 Kode OTP sudah dikirim ke Telegram kamu.\nKirim kode itu di sini untuk melanjutkan.")
+            pending_logins[user_id] = (client, phone)
+        except Exception as e:
+            await event.respond(f"❌ Gagal mengirim kode: `{e}`")
         return
 
-    file = await document.get_file()
-    file_name = document.file_name.lower()
-    file_path = await file.download_to_drive(custom_path=file_name)
+    # Jika user kirim kode OTP
+    if user_id in pending_logins:
+        client, phone = pending_logins[user_id]
+        code = text.replace(" ", "")
 
-    numbers = []
+        try:
+            await client.sign_in(phone=phone, code=code)
+            await event.respond("✅ Login berhasil! Membuat file session...")
 
-    try:
-        if file_name.endswith(".txt"):
-            with open(file_path, "r", encoding="utf-8") as f:
-                content = f.read().strip()
-            if "," in content:
-                numbers = [n.strip() for n in content.split(",") if n.strip()]
-            else:
-                numbers = [n.strip() for n in content.splitlines() if n.strip()]
+            # Tutup koneksi
+            await client.disconnect()
 
-        elif file_name.endswith(".xlsx"):
-            df = pd.read_excel(file_path, header=None)
-            for col in df.columns:
-                numbers.extend(df[col].dropna().astype(str).tolist())
+            # Kirim file session ke user
+            file_path = f"{client.session.filename}.session"
+            await bot.send_file(user_id, file_path, caption="🎉 Ini file session kamu!")
 
-        else:
-            await update.message.reply_text("Format file tidak didukung 😅 (gunakan .txt atau .xlsx)")
-            return
+            # Hapus data sementara dan file lokal (opsional)
+            del pending_logins[user_id]
+            os.remove(file_path)
+        except Exception as e:
+            await event.respond(f"⚠️ Gagal login: `{e}`")
+            del pending_logins[user_id]
 
-        # Hapus duplikat dan kosong
-        unique_numbers = sorted(set(n for n in numbers if n.strip()))
 
-        if not unique_numbers:
-            await update.message.reply_text("Tidak ada nomor valid ditemukan 😕")
-            return
-
-        # Bagi jadi beberapa pesan (maks ~100 baris per pesan)
-        chunk_size = 100
-        total = len(unique_numbers)
-        await update.message.reply_text(f"Berhasil! Ditemukan {total} nomor unik. Berikut daftarnya 👇")
-
-        for i in range(0, total, chunk_size):
-            chunk = unique_numbers[i:i + chunk_size]
-            formatted_chunk = "\n".join([f"`{num}`" for num in chunk])
-            await update.message.reply_text(formatted_chunk, parse_mode="MarkdownV2")
-
-    except Exception as e:
-        await update.message.reply_text(f"Terjadi kesalahan saat memproses file: {e}")
-
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
-        "Halo! Kirim file .txt atau .xlsx yang berisi daftar nomor. "
-        "Saya akan kirim balik daftar bersihnya tanpa duplikat 📋"
-    )
-
-if __name__ == "__main__":
-    app = ApplicationBuilder().token(BOT_TOKEN).build()
-    app.add_handler(MessageHandler(filters.Document.ALL, handle_file))
-    app.add_handler(MessageHandler(filters.TEXT & filters.Regex("^/start$"), start))
-
-    print("🤖 Bot sedang berjalan...")
-    app.run_polling()
+print("🤖 Bot sedang berjalan...")
+bot.run_until_disconnected()
